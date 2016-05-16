@@ -1,62 +1,43 @@
 # -*- coding: utf-8 -*-
 
-VERSION = "0.1"
+from gi.repository import GObject, Gdk, Gtk, Gedit
 
-from gi.repository import GObject, Gtk, Gedit, Gdk, Gio
-from gettext import gettext as _
-import cPickle, os
+
+_KEYS = (Gdk.KEY_Tab, Gdk.KEY_KP_Tab, Gdk.KEY_ISO_Left_Tab)
+_MODIFIERS = (Gdk.ModifierType.CONTROL_MASK,
+              Gdk.ModifierType.CONTROL_MASK |
+              Gdk.ModifierType.SHIFT_MASK)
+
 
 class TabSwitchPlugin(GObject.Object, Gedit.WindowActivatable):
-    __gtype_name__ = "ExamplePyWindowActivatable"
-    window = GObject.property(type=Gedit.Window)
+    window = GObject.Property(type=Gedit.Window)
 
     def __init__(self):
-        GObject.Object.__init__(self)
-        self.id_name = 'TabSwitchPluginID'
-    
+        super().__init__()
+
     def do_activate(self):
-        l_ids = []
-        for signal in ('key-press-event',):
-            method = getattr(self, 'on_window_' + signal.replace('-', '_'))
-            l_ids.append(self.window.connect(signal, method))
-        self.window.set_data(self.id_name, l_ids)
-    
+        self._key_press_id = self.window.connect('key-press-event',
+                                                 self.on_key_press_event)
+
     def do_deactivate(self):
-        l_ids = self.window.get_data(self.id_name)
-        
-        for l_id in l_ids:
-            self.window.disconnect(l_id)
+        self.window.disconnect(self._key_press_id)
+
+    def on_key_press_event(self, window, event):
+        if event.keyval not in _KEYS:
+            return False
+
+        modifiers = event.state & Gtk.accelerator_get_default_mod_mask()
+        if modifiers not in _MODIFIERS:
+            return False
+
+        tabs = [Gedit.Tab.get_from_document(doc)
+                for doc in self.window.get_documents()]
+        move_forward = not modifiers & Gdk.ModifierType.SHIFT_MASK
     
-    def on_window_key_press_event(self, window, event):
-        key = Gdk.keyval_name(event.keyval)
+        index = tabs.index(self.window.get_active_tab())
+        index += 1 if move_forward else -1
 
-        if event.state & Gdk.ModifierType.CONTROL_MASK and key in ('Tab', 'ISO_Left_Tab'):
-            atab = self.window.get_active_tab()
-            docs = self.window.get_documents()
-            tabs = []
-            for doc in docs:
-              tabs.append(Gedit.Tab.get_from_document(doc))
-            
-            tlen = len(tabs)
-            i = 0
-            tab = atab
-            
-            for tab in tabs:
-                i += 1
-                if tab == atab:
-                    break
-            
-            if key == 'ISO_Left_Tab':
-                i -= 2
-            
-            if i < 0:
-                tab = tabs[tlen-1]
-            elif i >= tlen:
-                tab = tabs[0]
-            else:
-                tab = tabs[i]
-            
-            self.window.set_active_tab(tab)
-            
-            return True
+        self.window.set_active_tab(tabs[index % len(tabs)])
+        return True
 
+# ex:ts=4:et:
